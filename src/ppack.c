@@ -31,9 +31,6 @@
 
 /* ================ DEFINES ================================================= */
 
-/** Maximum supported payload size in bits (CAN-FD frame data field). */
-#define PPACK_MAX_PAYLOAD_BITS 512u
-
 /** Maximum supported field width in bits. */
 #define PPACK_MAX_FIELD_BITS   32u
 
@@ -249,7 +246,11 @@ validate_field(const struct ppack_field *f, size_t payload_bits)
         if ((f->bit_length == 0u) || (f->bit_length > PPACK_MAX_FIELD_BITS)) {
                 return -PPACK_ERR_INVALARG;
         }
-        if ((size_t)f->start_bit + (size_t)f->bit_length > payload_bits) {
+        /* Check the start before subtracting. Adding start and length can
+         * wrap when size_t is 16 bits, even for a small payload. */
+        if (((size_t)f->start_bit > payload_bits)
+            || ((size_t)f->bit_length
+                > (payload_bits - (size_t)f->start_bit))) {
                 return -PPACK_ERR_OVERFLOW;
         }
         return PPACK_SUCCESS;

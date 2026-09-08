@@ -1,0 +1,6 @@
+option(
+  'legacy_root',
+  type: 'string',
+  value: '',
+  description: 'Absolute path to an unmodified legacy ppack source tree',
+)

@@ -92,14 +92,15 @@ TEST_CASE(test_pack_payload_bits_above_ceiling_rejected)
              .behaviour = PPACK_BEHAVIOUR_RAW},
         };
 
-        /* Just above the 512-bit CAN-FD ceiling. */
-        TEST_ASSERT(ppack_pack(&data, payload, 520, fields, 1)
+        /* Oversized payloads must fail before touching this small buffer. */
+        TEST_ASSERT(ppack_pack(&data, payload,
+                               (size_t)PPACK_MAX_PAYLOAD_BITS + 8u, fields, 1)
                     == -PPACK_ERR_INVALARG);
-        TEST_ASSERT(ppack_pack(&data, payload, 1024, fields, 1)
+        TEST_ASSERT(ppack_pack(&data, payload, SIZE_MAX, fields, 1)
                     == -PPACK_ERR_INVALARG);
 }
 
-TEST_CASE(test_pack_payload_bits_at_ceiling_passes)
+TEST_CASE(test_pack_canfd_payload_passes)
 {
         /* 512-bit payload with a uint32 field at the very top. */
         ppack_byte_t payload[512u / PPACK_ADDR_UNIT_BITS] = {0};
@@ -245,9 +246,9 @@ TEST_CASE(test_roundtrip_256bit_payload)
         TEST_ASSERT(dst.field_uint32 == src.field_uint32);
 }
 
-TEST_CASE(test_roundtrip_each_legal_size)
+TEST_CASE(test_roundtrip_each_legacy_size)
 {
-        /* Sweep every supported payload size and round-trip a small
+        /* Sweep every legacy payload size and round-trip a small
          * field at the bottom. Catches regressions in the memset width
          * and the unit-count math. */
         const struct ppack_field fields[] = {
@@ -462,8 +463,8 @@ run_payload_size_tests(void)
                  "test_pack_payload_bits_not_multiple_rejected");
         run_test(test_pack_payload_bits_above_ceiling_rejected,
                  "test_pack_payload_bits_above_ceiling_rejected");
-        run_test(test_pack_payload_bits_at_ceiling_passes,
-                 "test_pack_payload_bits_at_ceiling_passes");
+        run_test(test_pack_canfd_payload_passes,
+                 "test_pack_canfd_payload_passes");
         run_test(test_pack_overflow_against_payload_bits,
                  "test_pack_overflow_against_payload_bits");
         run_test(test_pack_field_above_64_bits_with_64_payload_rejected,
@@ -472,8 +473,8 @@ run_payload_size_tests(void)
                  "test_roundtrip_128bit_payload");
         run_test(test_roundtrip_256bit_payload,
                  "test_roundtrip_256bit_payload");
-        run_test(test_roundtrip_each_legal_size,
-                 "test_roundtrip_each_legal_size");
+        run_test(test_roundtrip_each_legacy_size,
+                 "test_roundtrip_each_legacy_size");
         run_test(test_wire_lockdown_128bit, "test_wire_lockdown_128bit");
         run_test(test_wire_lockdown_256bit, "test_wire_lockdown_256bit");
         run_test(test_wire_lockdown_512bit, "test_wire_lockdown_512bit");

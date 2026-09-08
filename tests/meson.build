@@ -19,6 +19,7 @@ test_sources = [
   'test_partial_coverage.c',
   'test_payload_size.c',
   'test_mau_layout.c',
+  'test_large_payload.c',
 ]
 
 test_exe = executable(
@@ -28,7 +29,8 @@ test_exe = executable(
   include_directories: public_headers,
 )
 
-test('ppack 8-bit native', test_exe)
+# The geometry sweep covers over two million start/width pairs per model.
+test('ppack 8-bit native', test_exe, timeout: 120)
 
 test_16bit_exe = executable(
   'test_ppack_16bit',
@@ -37,4 +39,4 @@ test_16bit_exe = executable(
   include_directories: public_headers,
 )
 
-test('ppack 16-bit simulated', test_16bit_exe)
+test('ppack 16-bit simulated', test_16bit_exe, timeout: 120)
