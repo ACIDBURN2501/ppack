@@ -15,7 +15,7 @@ meson setup build --buildtype=debug -Dbuild_tests=true \
 meson compile -C build
 meson test -C build --verbose
 
-# Coverage (CI gate is 80% line + 70% branch)
+# Coverage (CI gate is 100% line + 100% branch)
 meson setup build_cov --buildtype=debug -Dbuild_tests=true \
                       -Db_coverage=true
 meson compile -C build_cov && meson test -C build_cov
@@ -58,11 +58,15 @@ The library is analysed with `misch` (cppcheck-backed MISRA C:2023 analysis), co
 - Add a test for every new feature.
 - All tests must pass on both build configurations: 8-bit native and
   16-bit MAU simulated (`-DPPACK_SIMULATE_16BIT_MAU`).
-- CI enforces an 80% line / 70% branch coverage gate. New code without
+- CI enforces a 100% line / 100% branch coverage gate. New code without
   tests will fail the coverage gate.
 - Tests live in `tests/test_*.c`.
-- Fuzz seeds are fixed (`0xBEEF000N`) so failures are reproducible from
-  the test name alone. Do not introduce non-deterministic tests.
+- Fuzz seeds are fixed and recorded in each test. Failures must be
+  reproducible from the test name alone. Do not use non-deterministic tests.
+
+For payload-size changes, also run the independent geometry sweep and the
+legacy comparison. See [large-payload verification](docs/large-payload-verification.md)
+for commands and the limits of these checks.
 
 ## Wire format and API stability
 

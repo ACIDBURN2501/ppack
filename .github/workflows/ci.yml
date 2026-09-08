@@ -56,23 +56,43 @@ jobs:
       - name: Test
         run: meson test -C build --verbose
 
+      - name: Compare with the unmodified 2.4.0 codec
+        run: |
+          # Pin the pre-extension source. Never replace it with the PR head.
+          legacy_commit=fecf8778423c353a54b7387aa0954887a75fbe49
+          git fetch --no-tags --depth=1 origin "$legacy_commit"
+          mkdir -p "$RUNNER_TEMP/ppack-legacy"
+          git archive "$legacy_commit" include src | tar -x -C "$RUNNER_TEMP/ppack-legacy"
+          meson setup build_compat tests/compatibility \
+            --buildtype=debug \
+            "-Dlegacy_root=$RUNNER_TEMP/ppack-legacy" \
+            -Db_sanitize=address,undefined \
+            -Dc_args=-fsanitize=float-cast-overflow \
+            -Dc_link_args=-fsanitize=float-cast-overflow
+          meson test -C build_compat --verbose
+
       - name: Upload test log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: testlog-${{ matrix.os }}
-          path: build/meson-logs/testlog.txt
+          path: |
+            build/meson-logs/testlog.txt
+            build_compat/meson-logs/testlog.txt
 
   # ---------------------------------------------------------------------------
-  # Exercise the PPACK_PAYLOAD_BITS override path. The library and tests
-  # must build and pass at the documented 512-bit ceiling (CAN-FD frame
-  # data field). Locks in that no future change accidentally hard-codes
-  # an assumption tying the convenience-macro buffer size to 64 bits.
+  # Exercise the buffer-size override at CAN-FD size and at the codec's
+  # maximum. Runtime sizes must remain independent of this default.
   # ---------------------------------------------------------------------------
   override-test:
-    name: "Override test (PPACK_PAYLOAD_BITS=512)"
+    name: "Override test (PPACK_PAYLOAD_BITS=${{ matrix.bits }})"
     runs-on: ubuntu-latest
     needs: test
+
+    strategy:
+      fail-fast: false
+      matrix:
+        bits: [512, 65528]
 
     steps:
       - uses: actions/checkout@v4
@@ -87,13 +107,13 @@ jobs:
       - name: Install meson
         run: pip install meson
 
-      - name: Configure (debug + sanitizers + 512-bit override)
+      - name: Configure (debug + sanitizers + buffer-size override)
         run: >
           meson setup build
           --buildtype=debug
           -Dbuild_tests=true
           -Db_sanitize=address,undefined
-          "-Dc_args=-DPPACK_PAYLOAD_BITS=512 -fsanitize=float-cast-overflow"
+          "-Dc_args=-DPPACK_PAYLOAD_BITS=${{ matrix.bits }} -fsanitize=float-cast-overflow"
           -Dc_link_args=-fsanitize=float-cast-overflow
 
       - name: Build
@@ -106,7 +126,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: testlog-override
+          name: testlog-override-${{ matrix.bits }}
           path: build/meson-logs/testlog.txt
 
   # ---------------------------------------------------------------------------

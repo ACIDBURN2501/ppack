@@ -7,7 +7,7 @@ A generic payload serialisation library for bit-aligned data fields in C.
 ## Features
 
 - **Bit-aligned fields** - Fields can start at any bit position and span arbitrary bit ranges
-- **Variable payload size** - Caller supplies the payload size in bits (multiple of 8, up to 512); supports CAN classic (64) and CAN-FD (up to 512)
+- **Variable payload size** - Caller supplies a multiple of 8 bits, up to 65,528 bits. CAN classic and CAN-FD sizes remain supported.
 - **No dynamic memory** - Fixed-size operations, no `malloc` / `free`
 - **Deterministic WCET** - All operations have bounded execution time
 - **Scaled fields** - Linear scale/offset transformations for physical-unit encoding
@@ -170,6 +170,37 @@ Or, if every payload in your project is 512 bits, set
 `ppack_byte_t payload[PPACK_PAYLOAD_UNITS]`. The runtime API still
 takes the size explicitly.
 
+### Larger stored records
+
+Stored records can use up to `PPACK_MAX_PAYLOAD_BITS`, which is 65,528 bits
+or 8,191 logical octets. Individual fields remain limited to 32 bits.
+For example, a 1,024-bit record needs 128 payload storage units:
+
+```c
+ppack_byte_t record[1024u / PPACK_ADDR_UNIT_BITS];
+int ret = ppack_pack(&parameters, record, 1024u,
+                    parameter_fields, parameter_field_count);
+```
+
+Increasing `payload_bits` does not resize a buffer. Allocate at least
+`payload_bits / 8` elements of `ppack_byte_t` before calling the codec.
+Each logical octet occupies one 16-bit storage unit on a 16-bit MAU target.
+The default `PPACK_PAYLOAD_BITS` remains 64. Do not allocate the maximum
+on a small stack unless that space is available.
+
+The codec no longer rejects valid sizes above 512 bits. Callers must enforce
+CAN-FD and other transport limits before calling it. Audit callers that relied
+on the old rejection to protect a smaller buffer.
+
+The packed representation of existing fields does not change. The codec does
+not provide CRC, schema versioning, or atomic record updates. Decode into a
+temporary structure and publish it only after a successful return. On failure,
+pack and unpack can leave partial output. Record-format changes still require
+the consumer's version and recovery policy.
+
+See [large-payload verification](docs/large-payload-verification.md) for the
+range argument, test coverage, and remaining caller obligations.
+
 ## Building
 
 ```sh
@@ -212,7 +243,10 @@ int ppack_unpack(void *base_ptr, const void *payload, size_t payload_bits,
                  const struct ppack_field *fields, size_t field_count);
 ```
 
-`payload_bits` is the payload size in bits. Must be a positive multiple of `PPACK_ADDR_UNIT_BITS` (always 8) and no greater than 512 (CAN-FD frame data field). Common values: `64` for CAN classic, `512` for full CAN-FD frames.
+`payload_bits` is the payload size in bits. It must be a positive multiple
+of `PPACK_ADDR_UNIT_BITS`, which is always 8. The maximum is
+`PPACK_MAX_PAYLOAD_BITS`, or 65,528. Common values are `64` for CAN classic
+and `512` for full CAN-FD frames. The caller must enforce transport limits.
 
 ### Field Descriptor
 
@@ -247,7 +281,7 @@ For `PPACK_BEHAVIOUR_SCALED` fields the struct member must always be `float`, re
 | Code                 | Value | Meaning                                                                                                                                                                                         |
 | -------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PPACK_SUCCESS`      | 0     | Operation succeeded                                                                                                                                                                             |
-| `PPACK_ERR_INVALARG` | 1     | Invalid argument (NULL fields, zero field count, `bit_length` out of range, `payload_bits` zero or not a multiple of `PPACK_ADDR_UNIT_BITS` or > 512, scaling requested for `PPACK_TYPE_UINT8`) |
+| `PPACK_ERR_INVALARG` | 1     | Invalid argument (NULL fields, zero field count, `bit_length` out of range, `payload_bits` zero or not a multiple of `PPACK_ADDR_UNIT_BITS` or > `PPACK_MAX_PAYLOAD_BITS`, scaling requested for `PPACK_TYPE_UINT8`) |
 | `PPACK_ERR_NOTFOUND` | 3     | Unknown field type                                                                                                                                                                              |
 | `PPACK_ERR_NULLPTR`  | 4     | NULL pointer passed for `base_ptr` or `payload`                                                                                                                                                 |
 | `PPACK_ERR_OVERFLOW` | 5     | `start_bit + bit_length > payload_bits`, or `scale == 0` on a `SCALED` field                                                                                                                    |
@@ -256,7 +290,9 @@ Functions return the negated error code on failure (e.g. `-PPACK_ERR_NULLPTR`). 
 
 ## Wire Format
 
-The payload is `payload_bits` bits long (a multiple of 8, between 8 and 512), addressed as `payload_bits / 8` logical bytes numbered 0 to `payload_bits / 8 - 1`.
+The payload contains `payload_bits` bits, a multiple of 8 between 8 and 65,528.
+Its `payload_bits / 8` logical bytes are numbered from 0 to
+`payload_bits / 8 - 1`.
 
 - **Bit numbering**: payload bit `N` lives in logical byte `N / 8`, at position `N mod 8` within that byte.
 - **Within a byte**: bit 0 is the least significant bit.
@@ -338,7 +374,7 @@ All public APIs validate arguments at the function boundary.
 
 - Passing `NULL` for any pointer returns `-PPACK_ERR_NULLPTR`.
 - Passing `NULL` or an empty `fields` array returns `-PPACK_ERR_INVALARG`.
-- A `payload_bits` argument that is zero, not a multiple of `PPACK_ADDR_UNIT_BITS`, or greater than 512 returns `-PPACK_ERR_INVALARG`.
+- A `payload_bits` argument that is zero, not a multiple of 8, or greater than `PPACK_MAX_PAYLOAD_BITS` returns `-PPACK_ERR_INVALARG`.
 - A field with `bit_length == 0` or `bit_length > 32` returns `-PPACK_ERR_INVALARG`.
 - A field where `start_bit + bit_length > payload_bits` returns `-PPACK_ERR_OVERFLOW`.
 - A `PPACK_BEHAVIOUR_SCALED` field with `scale == 0.0` returns `-PPACK_ERR_OVERFLOW`.
@@ -360,7 +396,7 @@ ppack is a serialisation primitive only. The following are explicitly out of sco
 
 - **No integrity checks**: no CRC, checksum, or framing. Caller (or the transport, e.g. the CAN frame CRC) is responsible for detecting bit errors.
 - **No schema versioning**: the field-descriptor layout is the schema. Maintain it in shared headers across nodes.
-- **Payload size capped at 512 bits**: matches a full CAN-FD frame data field. Larger payloads require multiple ppack calls on chunks.
+- **Payload size capped at 65,528 bits**: the bound retains 16-bit bit indices and supports targets with 16-bit `size_t`.
 - **No multi-buffer / streaming API**: a single payload is processed in one call.
 - **No runtime endianness adaptation**: the wire format is little-endian. Big-endian hosts would need explicit byte swapping at the boundary (no such host is currently a target).
 
@@ -370,7 +406,7 @@ ppack is a serialisation primitive only. The following are explicitly out of sco
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Memory**              | All operations use stack memory; no dynamic allocation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | **MISRA C:2023**        | Audited with `misch` (cppcheck-backed MISRA C:2023 analysis; configuration in `misra.toml`); the audit reports zero findings. Deviations are justified at point of use with `cppcheck-suppress ... @deviation` comments, or project-wide in `misra-deviations.txt`. The only required-rule deviations are three Rule 21.15 sites: the type-erased struct-member copies centralised in two internal helpers, and the deliberate F32 `float`/`uint32_t` pun. Design follows MISRA principles throughout: no dynamic allocation, no UB shifts, explicit error codes, `memcpy`-based type punning. |
-| **Payload size**        | Caller-supplied via `payload_bits` (multiple of 8, between 8 and 512). 64 matches CAN classic; 512 matches full CAN-FD.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Payload size**        | Caller-supplied via `payload_bits`, a multiple of 8 between 8 and 65,528. The default buffer size remains 64 bits.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **Bit ordering**        | LSB-first within each byte; multi-byte fields little-endian; fields may span byte boundaries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | **Field size**          | 1-32 bits per field                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Thread safety**       | Not thread-safe; caller must provide mutual exclusion when `base_ptr` or `payload` is shared across threads or ISRs                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

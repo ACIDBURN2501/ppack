@@ -51,11 +51,11 @@ extern "C" {
  *
  * @details
  *    The ppack library serialises and deserialises C structures into a
- *    variable-size payload (any multiple of 8 bits, up to 512 bits)
+ *    variable-size payload (any multiple of 8 bits, up to 65528 bits)
  *    using arbitrary bit-aligned field descriptors. It supports
  *    @c uint8_t, @c uint16_t, @c int16_t, @c uint32_t, @c int32_t,
- *    IEEE-754 @c float, and raw bitfields up to 32 bits wide. The
- *    512-bit ceiling matches the maximum CAN-FD frame data field.
+ *    IEEE-754 @c float, and raw bitfields up to 32 bits wide.
+ *    Transport-specific limits must be checked by the caller.
  *
  *    The payload size is supplied at the call site via the
  *    @c payload_bits argument; classic 8-byte CAN payloads use
@@ -88,11 +88,12 @@ extern "C" {
  *    explicit byte swapping in user code.
  *
  *    Declare the payload buffer as @c ppack_byte_t
- * payload[PPACK_PAYLOAD_UNITS]. This model works on all MAU sizes. The @c
- * PPACK_PAYLOAD_UNITS macro declares a 64-bit payload by default (8 bytes or
- * four 16-bit words). Override @c PPACK_PAYLOAD_BITS at the toolchain level for
- * other sizes (for example, @c -DPPACK_PAYLOAD_BITS=512). The runtime API takes
- * the size as an explicit argument.
+ *    payload[PPACK_PAYLOAD_UNITS]. This model works on all MAU sizes.
+ *    The macro declares a 64-bit payload by default: eight storage units
+ *    on both 8-bit and 16-bit MAU targets. Override @c PPACK_PAYLOAD_BITS
+ *    for other sizes, or declare @c ppack_byte_t payload[N / 8u] and pass
+ *    N as the runtime size. Increasing the runtime size does not resize
+ *    the buffer. The caller must provide sufficient storage.
  *
  *    ## Scaled-field semantics
  *
@@ -212,6 +213,15 @@ enum ppack_behaviour {
 /**
  * @brief Describes a field within a payload.
  *
+ * @details
+ * - ::ppack_field::type  Data type of the field.
+ * - ::ppack_field::start_bit  Starting bit position (0..payload_bits-1).
+ * - ::ppack_field::bit_length  Number of bits (1-32).
+ * - ::ppack_field::ptr_offset  Offset from offsetof() into the base structure.
+ * - ::ppack_field::scale  Scaling factor, ignored for F32 and BITS.
+ * - ::ppack_field::offset  Offset after scaling, ignored for F32 and BITS.
+ * - ::ppack_field::behaviour  Raw or scaled mode, see ppack_behaviour.
+ *
  * @note  Set @c bit_length to match the natural width of @c type.
  *        The library accepts larger values (it enforces
  *        @c bit_length <= 32 and
@@ -228,13 +238,12 @@ enum ppack_behaviour {
  *        native C type implied by @c type (see @c ppack_type).
  */
 struct ppack_field {
-        enum ppack_type type; /**< Data type of the field */
-        uint16_t start_bit;   /**< Starting bit position (0..payload_bits-1) */
-        uint16_t bit_length;  /**< Number of bits (1-32) */
-        size_t ptr_offset;    /**< Offset returned by offsetof() into base */
-        float scale;          /**< Scaling factor (ignored for F32 / BITS) */
-        float offset; /**< Offset after scaling (ignored for F32 / BITS) */
-        /** Raw or scaled (see @c ppack_behaviour) */
+        enum ppack_type type;
+        uint16_t start_bit;
+        uint16_t bit_length;
+        size_t ptr_offset;
+        float scale;
+        float offset;
         enum ppack_behaviour behaviour;
 };
 
@@ -263,7 +272,7 @@ struct ppack_field {
  *                          for non-default sizes.
  * @param[in]  payload_bits Payload size in bits. Must be a positive
  *                          multiple of @c PPACK_ADDR_UNIT_BITS and no
- *                          greater than 512 (CAN-FD frame data field).
+ *                          greater than @c PPACK_MAX_PAYLOAD_BITS.
  * @param[in]  fields       Array of field descriptors
  * @param[in]  field_count  Number of fields
  *
@@ -273,8 +282,9 @@ struct ppack_field {
  *                               @c field_count is 0, @c fields is NULL,
  *                               @c payload_bits is 0, @c payload_bits is not
  *                               a multiple of @c PPACK_ADDR_UNIT_BITS,
- *                               @c payload_bits exceeds 512, @c bit_length is 0
- *                               or greater than 32, scaling is set for
+ *                               @c payload_bits exceeds the maximum,
+ *                               @c bit_length is 0 or greater than 32,
+ *                               scaling is set for
  *                               @c PPACK_TYPE_UINT8, or a SCALED field
  *                               produces a NaN result.
  * @return -PPACK_ERR_OVERFLOW  when @c start_bit plus bit_length exceeds
@@ -315,7 +325,7 @@ int ppack_pack(const void *base_ptr, void *payload, size_t payload_bits,
  *                          for non-default sizes.
  * @param[in]  payload_bits Payload size in bits. Must be a positive
  *                          multiple of @c PPACK_ADDR_UNIT_BITS and no
- *                          greater than 512.
+ *                          greater than @c PPACK_MAX_PAYLOAD_BITS.
  * @param[in]  fields       Array of field descriptors
  * @param[in]  field_count  Number of fields
  *
@@ -325,8 +335,9 @@ int ppack_pack(const void *base_ptr, void *payload, size_t payload_bits,
  *                               @c field_count is 0, @c fields is NULL,
  *                               @c payload_bits is 0, @c payload_bits is not
  *                               a multiple of @c PPACK_ADDR_UNIT_BITS,
- *                               @c payload_bits exceeds 512, @c bit_length is 0
- *                               or greater than 32, or scaling is set for
+ *                               @c payload_bits exceeds the maximum,
+ *                               @c bit_length is 0 or greater than 32,
+ *                               or scaling is set for
  *                               @c PPACK_TYPE_UINT8.
  * @return -PPACK_ERR_OVERFLOW  if @c start_bit + bit_length exceeds
  *                               @c payload_bits

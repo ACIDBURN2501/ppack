@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.0] - 2026-09-08
+
+### Changed
+
+- Raised the payload limit from 512 to 65,528 bits, or 8,191 logical octets.
+  The public `PPACK_MAX_PAYLOAD_BITS` constant defines the runtime and
+  compile-time maximum. The default buffer size remains 64 bits.
+- Retained function signatures, field-descriptor layout, 32-bit field widths,
+  and the packed representation of existing fields.
+
+Callers must provide enough payload storage and enforce transport-specific
+limits. Valid sizes above 512 bits no longer fail before buffer access.
+The codec still permits partial output on errors. CRC, record publication,
+and format-version policy remain the consumer's responsibility.
+
+### Fixed
+
+- Changed field-range validation to ordered subtraction. This prevents
+  malformed high offsets from wrapping the check on 16-bit `size_t` targets.
+
+### Added
+
+- Independent bit-at-a-time reference tests for every legal start/width pair,
+  every payload size, high-offset mixed types, and boundary value patterns.
+- Guard, clearing, input-preservation, and malformed-geometry tests for both
+  native and simulated 16-bit-MAU storage.
+- Compile-time configuration checks and a maximum-size CI override build.
+- A [verification record](docs/large-payload-verification.md) with the range
+  argument, compatibility checks, and target-compilation scope.
+
 ## [2.4.0] - 2026-07-03
 
 ### Fixed

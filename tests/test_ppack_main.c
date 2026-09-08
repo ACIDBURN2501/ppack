@@ -20,7 +20,7 @@
  * on word-addressable platforms ppack_byte_t == uint16_t (2 bytes).
  *
  * PPACK_PAYLOAD_UNITS is bounded by the library's own static asserts
- * in ppack_platform.h (multiple of PPACK_ADDR_UNIT_BITS, ≤ 512 bits);
+ * in ppack_platform.h (positive multiple of 8, at most 65528 bits);
  * we deliberately do not duplicate that bound here so tests build
  * cleanly under any legal PPACK_PAYLOAD_BITS override.
  */
@@ -44,6 +44,7 @@ extern void run_wire_lockdown_tests(void);
 extern void run_partial_coverage_tests(void);
 extern void run_payload_size_tests(void);
 extern void run_mau_layout_tests(void);
+extern void run_large_payload_tests(void);
 
 int
 main(void)
@@ -68,6 +69,7 @@ main(void)
         run_partial_coverage_tests();
         run_payload_size_tests();
         run_mau_layout_tests();
+        run_large_payload_tests();
 
         fprintf(stdout, "\n=== All tests passed ===\n\n");
         return EXIT_SUCCESS;

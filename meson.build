@@ -1,7 +1,7 @@
 project(
   'ppack',
   'c',
-  version: '2.4.0',
+  version: '2.5.0',
   default_options: [
     'c_std=c11',
     'warning_level=3',
@@ -60,6 +60,25 @@ ppack_dep = declare_dependency(
 # === Host unit tests ==========================================================
 
 if get_option('build_tests')
+  # Check header configuration separately from the runtime size checks.
+  cc = meson.get_compiler('c')
+  foreach bits : ['8', '512', '65528']
+    assert(cc.compiles(
+      '#include "ppack.h"',
+      include_directories: public_headers,
+      args: ['-UPPACK_PAYLOAD_BITS', '-DPPACK_PAYLOAD_BITS=' + bits],
+      name: 'valid default payload size ' + bits,
+    ), 'Valid PPACK_PAYLOAD_BITS rejected: ' + bits)
+  endforeach
+  foreach bits : ['0', '7', '65529', '65536']
+    assert(not cc.compiles(
+      '#include "ppack.h"',
+      include_directories: public_headers,
+      args: ['-UPPACK_PAYLOAD_BITS', '-DPPACK_PAYLOAD_BITS=' + bits],
+      name: 'invalid default payload size ' + bits,
+    ), 'Invalid PPACK_PAYLOAD_BITS accepted: ' + bits)
+  endforeach
+
   # Second build of the library with the 16-bit MAU simulation flag, so the
   # test binary linking against it actually exercises the word-addressable
   # code path end-to-end (including ppack_u8_t sizing inside the library).

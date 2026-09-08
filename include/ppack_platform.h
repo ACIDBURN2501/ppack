@@ -27,7 +27,7 @@
  *
  *    The library's wire format is identical across both addressing
  *    models: a sequence of N bits (where N is the @c payload_bits
- *    argument, a multiple of 8 between 8 and 512), with bit 0
+ *    argument, a multiple of 8 between 8 and 65528), with bit 0
  *    corresponding to the least significant bit of the first logical
  *    8-bit byte. See the "Wire format" section in the README for the
  *    full contract.
@@ -84,13 +84,23 @@ typedef uint8_t ppack_byte_t;
 typedef ppack_byte_t ppack_u8_t;
 
 /**
+ * @brief Maximum payload size in bits: 8191 logical octets.
+ *
+ * This is the largest multiple of 8 representable in uint16_t.
+ * It keeps payload sizes representable with 16-bit size_t and valid
+ * bit positions within the uint16_t indices used by the codec.
+ * This limit does not set the default buffer size or a transport limit.
+ */
+#define PPACK_MAX_PAYLOAD_BITS 65528u
+
+/**
  * @brief Default payload size in bits for @c PPACK_PAYLOAD_UNITS
  *        (defined in @c ppack.h).
  *
  * Override at the toolchain level (for example, @c -DPPACK_PAYLOAD_BITS=128)
  * to declare stack buffers of a different size.
  * The value must be a positive multiple of @c PPACK_ADDR_UNIT_BITS
- * and no greater than 512.
+ * and no greater than @c PPACK_MAX_PAYLOAD_BITS.
  *
  * The runtime API takes the payload size as an explicit argument.
  */
@@ -132,9 +142,8 @@ _Static_assert((PPACK_PAYLOAD_BITS > 0u)
                "PPACK_PAYLOAD_BITS must be a positive multiple of "
                "PPACK_ADDR_UNIT_BITS");
 
-_Static_assert(PPACK_PAYLOAD_BITS <= 512u,
-               "PPACK_PAYLOAD_BITS must be at most 512 "
-               "(CAN-FD frame data field ceiling)");
+_Static_assert(PPACK_PAYLOAD_BITS <= PPACK_MAX_PAYLOAD_BITS,
+               "PPACK_PAYLOAD_BITS must be at most 65528");
 
 _Static_assert(sizeof(float) == sizeof(uint32_t),
                "ppack requires a 32-bit float "
